@@ -1,0 +1,21 @@
+{
+  "name": "amazon-ses-examples",
+  "version": "1.0.0",
+  "description": "Example code for Amazon SES setup",
+  "main": "smtp-send.js",
+  "scripts": {
+    "send": "node smtp-send.js"
+  },
+  "keywords": [
+    "aws",
+    "ses",
+    "email",
+    "smtp"
+  ],
+  "author": "rizkiprass",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.3.1",
+    "nodemailer": "^6.9.7"
+  }
+}

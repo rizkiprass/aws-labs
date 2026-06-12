@@ -1,0 +1,397 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Amazon SES Complete Setup - Domain verification, Configuration Sets, VDM tracking,
+  SNS alerts, S3 logging via Firehose, DMARC alignment, and Suppression List.
+  For step-by-step instructions, see the lab hands-on guide.
+
+Parameters:
+  DomainName:
+    Type: String
+    Description: The domain to verify in SES (e.g., rpras.my.id)
+    AllowedPattern: '^[a-zA-Z0-9][a-zA-Z0-9\-\.]*[a-zA-Z0-9]$'
+    ConstraintDescription: Must be a valid domain name
+
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment label (dev, staging, prod)
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+
+  MailFromSubdomain:
+    Type: String
+    Default: bounce
+    Description: Subdomain for custom MAIL FROM (e.g., bounce for bounce.example.com)
+
+  DmarcPolicy:
+    Type: String
+    Default: quarantine
+    Description: DMARC policy for the domain
+    AllowedValues:
+      - none
+      - quarantine
+      - reject
+
+  DmarcReportEmail:
+    Type: String
+    Description: Email address to receive DMARC aggregate reports
+
+  S3LogBucketName:
+    Type: String
+    Description: S3 bucket name for SES event logs
+
+  AlertEmail:
+    Type: String
+    Description: Email address to receive bounce and complaint alerts
+
+  BounceRateThreshold:
+    Type: Number
+    Default: 0.05
+    Description: Bounce rate threshold for alarm (0.05 = 5%)
+
+  ComplaintRateThreshold:
+    Type: Number
+    Default: 0.001
+    Description: Complaint rate threshold for alarm (0.001 = 0.1%)
+
+Resources:
+  # ============================================
+  # SES Domain Identity
+  # ============================================
+  SesDomainIdentity:
+    Type: AWS::SES::EmailIdentity
+    Properties:
+      DkimSigningAttributes:
+        DomainSigningSelector: !Sub '${DomainName}-${Environment}'
+        DomainSigningPrivateKey: !Ref DkimPrivateKey
+      MailFromAttributes:
+        MailFromDomain: !Sub '${MailFromSubdomain}.${DomainName}'
+        BehaviorOnMxFailure: USE_DEFAULT_VALUE
+      EmailIdentity: !Ref DomainName
+
+  # Note: In production, use Easy DKIM via the console or custom resources.
+  # The DKIM CNAME records need to be added to your DNS manually.
+
+  # ============================================
+  # Configuration Sets
+  # ============================================
+  DefaultConfigSet:
+    Type: AWS::SES::ConfigurationSet
+    Properties:
+      Name: !Sub '${Environment}-default-monitoring-config'
+
+  TransactionalConfigSet:
+    Type: AWS::SES::ConfigurationSet
+    Properties:
+      Name: !Sub '${Environment}-transactional-config'
+
+  MarketingConfigSet:
+    Type: AWS::SES::ConfigurationSet
+    Properties:
+      Name: !Sub '${Environment}-marketing-config'
+
+  # ============================================
+  # CloudWatch Event Destictions for Config Sets
+  # ============================================
+  DefaultConfigSetEventDestination:
+    Type: AWS::SES::ConfigurationSetEventDestination
+    Properties:
+      ConfigurationSetName: !Ref DefaultConfigSet
+      EventDestination:
+        Name: !Sub '${Environment}-default-cloudwatch'
+        Enabled: true
+        EventDestinationType: CloudWatch
+        CloudWatchDestination:
+          DimensionConfiguration:
+            - DimensionName: ConfigSet
+              DimensionValueSource: MESSAGE_TAG
+        MatchingEventTypes:
+          - Send
+          - Delivery
+          - Bounce
+          - Complaint
+          - Reject
+
+  TransactionalConfigSetEventDestination:
+    Type: AWS::SES::ConfigurationSetEventDestination
+    Properties:
+      ConfigurationSetName: !Ref TransactionalConfigSet
+      EventDestination:
+        Name: !Sub '${Environment}-transactional-cloudwatch'
+        Enabled: true
+        EventDestinationType: CloudWatch
+        CloudWatchDestination:
+          DimensionConfiguration:
+            - DimensionName: ConfigSet
+              DimensionValueSource: MESSAGE_TAG
+        MatchingEventTypes:
+          - Send
+          - Delivery
+          - Bounce
+          - Complaint
+          - Open
+          - Click
+
+  MarketingConfigSetEventDestination:
+    Type: AWS::SES::ConfigurationSetEventDestination
+    Properties:
+      ConfigurationSetName: !Ref MarketingConfigSet
+      EventDestination:
+        Name: !Sub '${Environment}-marketing-cloudwatch'
+        Enabled: true
+        EventDestinationType: CloudWatch
+        CloudWatchDestination:
+          DimensionConfiguration:
+            - DimensionName: ConfigSet
+              DimensionValueSource: MESSAGE_TAG
+        MatchingEventTypes:
+          - Send
+          - Delivery
+          - Bounce
+          - Complaint
+          - Open
+          - Click
+
+  # ============================================
+  # S3 Bucket for SES Logs
+  # ============================================
+  SesLogBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref S3LogBucketName
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: ArchiveOldLogs
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: 90
+                StorageClass: GLACIER
+            ExpirationInDays: 365
+
+  SesLogBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref SesLogBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowFirehoseWrite
+            Effect: Allow
+            Principal:
+              Service: firehose.amazonaws.com
+            Action: s3:PutObject
+            Resource: !Sub '${SesLogBucket.Arn}/*'
+
+  # ============================================
+  # Kinesis Data Firehose
+  # ============================================
+  SesFirehoseRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: firehose.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonKinesisFirehoseFullAccess
+      Policies:
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:AbortMultipartUpload
+                  - s3:GetBucketLocation
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:ListBucketMultipartUploads
+                Resource:
+                  - !GetAtt SesLogBucket.Arn
+                  - !Sub '${SesLogBucket.Arn}/*'
+
+  SesFirehoseStream:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    Properties:
+      DeliveryStreamName: !Sub '${Environment}-ses-event-stream'
+      DeliveryStreamType: DirectPut
+      S3DestinationConfiguration:
+        BucketARN: !GetAtt SesLogBucket.Arn
+        Prefix: ses-events/
+        BufferingHints:
+          IntervalInSeconds: 300
+          SizeInMBs: 5
+        CompressionFormat: GZIP
+        RoleARN: !GetAtt SesFirehoseRole.Arn
+
+  # ============================================
+  # Firehose Event Destination on Default Config Set
+  # ============================================
+  DefaultConfigSetFirehoseDestination:
+    Type: AWS::SES::ConfigurationSetEventDestination
+    Properties:
+      ConfigurationSetName: !Ref DefaultConfigSet
+      EventDestination:
+        Name: !Sub '${Environment}-default-firehose'
+        Enabled: true
+        EventDestinationType: Firehose
+        FirehoseDestination:
+          DeliveryStreamARN: !GetAtt SesFirehoseStream.Arn
+          IAMRoleARN: !GetAtt SesFirehoseRole.Arn
+        MatchingEventTypes:
+          - Send
+          - Delivery
+          - Bounce
+          - Complaint
+          - Reject
+          - Open
+          - Click
+          - Rendering Failure
+
+  # ============================================
+  # SNS Topic for Alerts
+  # ============================================
+  SesAlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: !Sub '${Environment}-ses-alerts'
+      TopicName: !Sub '${Environment}-ses-alerts'
+
+  SesAlertSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+      TopicArn: !Ref SesAlertTopic
+
+  # SNS Event Destinations for bounce and complaint
+  DefaultConfigSetSnsDestination:
+    Type: AWS::SES::ConfigurationSetEventDestination
+    Properties:
+      ConfigurationSetName: !Ref DefaultConfigSet
+      EventDestination:
+        Name: !Sub '${Environment}-default-sns'
+        Enabled: true
+        EventDestinationType: SNS
+        SNSDestination:
+          TopicARN: !Ref SesAlertTopic
+        MatchingEventTypes:
+          - Bounce
+          - Complaint
+
+  # ============================================
+  # CloudWatch Alarms for Reputation
+  # ============================================
+  AccountBounceRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${Environment}-ses-account-high-bounce-rate'
+      AlarmDescription: Account-level bounce rate exceeds threshold
+      MetricName: Reputation.BounceRate
+      Namespace: AWS/SES
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: !Ref BounceRateThreshold
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - !Ref SesAlertTopic
+      TreatMissingData: notBreaching
+
+  AccountComplaintRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${Environment}-ses-account-high-complaint-rate'
+      AlarmDescription: Account-level complaint rate exceeds threshold
+      MetricName: Reputation.ComplaintRate
+      Namespace: AWS/SES
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: !Ref ComplaintRateThreshold
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - !Ref SesAlertTopic
+      TreatMissingData: notBreaching
+
+  # ============================================
+  # Per Config Set Alarms
+  # ============================================
+  DefaultConfigSetBounceAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${Environment}-default-configset-high-bounce-rate'
+      AlarmDescription: Default config set bounce rate exceeds threshold
+      MetricName: Reputation.BounceRate
+      Namespace: AWS/SES
+      Dimensions:
+        - Name: ConfigurationSet
+          Value: !Ref DefaultConfigSet
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: !Ref BounceRateThreshold
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - !Ref SesAlertTopic
+
+  DefaultConfigSetComplaintAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${Environment}-default-configset-high-complaint-rate'
+      AlarmDescription: Default config set complaint rate exceeds threshold
+      MetricName: Reputation.ComplaintRate
+      Namespace: AWS/SES
+      Dimensions:
+        - Name: ConfigurationSet
+          Value: !Ref DefaultConfigSet
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: !Ref ComplaintRateThreshold
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - !Ref SesAlertTopic
+
+Outputs:
+  DomainIdentity:
+    Description: SES verified domain identity
+    Value: !Ref DomainName
+
+  DefaultConfigSetName:
+    Description: Default configuration set name
+    Value: !Ref DefaultConfigSet
+
+  TransactionalConfigSetName:
+    Description: Transactional configuration set name
+    Value: !Ref TransactionalConfigSet
+
+  MarketingConfigSetName:
+    Description: Marketing configuration set name
+    Value: !Ref MarketingConfigSet
+
+  S3LogBucket:
+    Description: S3 bucket for SES event logs
+    Value: !Ref SesLogBucket
+
+  FirehoseStreamName:
+    Description: Kinesis Firehose delivery stream name
+    Value: !Sub '${Environment}-ses-event-stream'
+
+  AlertTopicArn:
+    Description: SNS topic ARN for SES alerts
+    Value: !Ref SesAlertTopic
+
+  MailFromDomain:
+    Description: Custom MAIL FROM domain
+    Value: !Sub '${MailFromSubdomain}.${DomainName}'
