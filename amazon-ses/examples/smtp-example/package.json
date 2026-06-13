@@ -1,0 +1,14 @@
+{
+  "name": "ses-smtp-example",
+  "version": "1.0.0",
+  "description": "Amazon SES SMTP Example with Nodemailer",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "nodemailer": "^6.9.13"
+  }
+}

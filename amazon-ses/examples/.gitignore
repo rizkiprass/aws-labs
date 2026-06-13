@@ -1,5 +1,7 @@
 # Dependencies
 node_modules/
+
+# Lock files (keep one at top level if needed)
 package-lock.json
 
 # Environment files (never commit)
@@ -7,7 +9,10 @@ package-lock.json
 .env.local
 .env.*.local
 
-# Recipients list (contains PII)
+# Recipients and PII
+emails.json
+emails.csv
+emails.txt
 recipients.json
 
 # Logs

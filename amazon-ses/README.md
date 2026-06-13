@@ -44,28 +44,28 @@ After the stack is created:
 3. Wait for DKIM verification (usually 5-30 minutes)
 4. If you set `MailFromSubdomain`, add the required MX and SPF records shown in the SES Console
 
-### 4. Configure your domain as a default config set
-
-1. Go to **SES Console** → **Verified identities** → your domain
-2. Under **Configuration set**, select the default monitoring config set created by the stack
-
-### 5. Send a test email
+### 4. Send a test email
 
 ```bash
-# Get SMTP credentials
-aws ses describe-active-receipt-rule-set --no-cli-pager
-
 # Use the example SMTP script
-cd examples
+cd examples/smtp-example
+npm install
 cp .env.example .env
 # Edit .env with your SMTP credentials
-npm install
-node smtp-send.js
+npm start
 ```
 
-## Manual Setup
+## Examples
 
-For a step-by-step walkthrough, see the [lab hands-on guide](https://github.com/rizkiprass/knowledge/blob/main/topics/amazon-ses/02-lab-hands-on/amazon-ses-lab.md) in the knowledge repo.
+The `examples/` folder contains working code sourced from the [Learn-SES](https://github.com/rizkiprass/Learn-SES) project:
+
+- **`smtp-example/`** — Send via SMTP with Nodemailer (text, HTML, attachment)
+- **`api-example/`** — Send via AWS SDK v3 (simple, HTML, templates, account info)
+- **`full-app/`** — Express.js server with REST API + web UI
+- **`bulk-email-example.js`** — Send to thousands via `SendBulkTemplatedEmailCommand`
+- **`input-email-examples.js`** — Read recipients from CSV / JSON / TXT
+
+See [`examples/README.md`](./examples/README.md) for full details.
 
 ## Parameters
 
@@ -93,11 +93,6 @@ After deployment, the stack exports:
 - `AlertTopicArn` — SNS topic for alerts
 - `MailFromDomain` — Custom MAIL FROM domain
 
-## Examples
-
-- `examples/smtp-send.js` — Send email via SES SMTP using nodemailer
-- `examples/.env.example` — Environment variable template
-
 ## Cost
 
 Approximate monthly cost for a typical workload (10,000 emails/month):
@@ -116,8 +111,6 @@ aws s3 rb s3://your-ses-logs-bucket
 
 # Delete the CloudFormation stack
 aws cloudformation delete-stack --stack-name amazon-ses
-
-# Wait for deletion to complete
 aws cloudformation wait stack-delete-complete --stack-name amazon-ses
 
 # Remove DNS records
@@ -130,3 +123,4 @@ aws cloudformation wait stack-delete-complete --stack-name amazon-ses
 - 📖 [Amazon SES hands-on lab guide](https://github.com/rizkiprass/knowledge/blob/main/topics/amazon-ses/02-lab-hands-on/amazon-ses-lab.md)
 - 📝 [Medium blog post](https://github.com/rizkiprass/knowledge/blob/main/topics/amazon-ses/04-medium/amazon-ses-post.md)
 - 💼 [LinkedIn post](https://github.com/rizkiprass/knowledge/blob/main/topics/amazon-ses/05-linkedin/amazon-ses-linkedin.md)
+- 💻 [Original Learn-SES examples](https://github.com/rizkiprass/Learn-SES)

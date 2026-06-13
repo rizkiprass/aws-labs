@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Amazon SES Email Tester</title>
+  <style>
+    :root {
+      --bg-primary: #0f172a;
+      --bg-secondary: #1e293b;
+      --bg-tertiary: #334155;
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --accent: #3b82f6;
+      --accent-hover: #2563eb;
+      --success: #10b981;
+      --error: #ef4444;
+      --warning: #f59e0b;
+      --border: #475569;
+      --radius: 12px;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+      line-height: 1.6;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 40px 20px;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 50px;
+    }
+
+    header h1 {
+      font-size: 2.5rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 10px;
+    }
+
+    header p {
+      color: var(--text-secondary);
+      font-size: 1.1rem;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 30px;
+      border-bottom: 1px solid var(--bg-tertiary);
+      padding-bottom: 15px;
+      flex-wrap: wrap;
+    }
+
+    .tab {
+      padding: 12px 24px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--bg-tertiary);
+      border-radius: var(--radius);
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all 0.2s;
+      font-size: 0.95rem;
+    }
+
+    .tab:hover {
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+    }
+
+    .tab.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: white;
+    }
+
+    .content {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 30px;
+    }
+
+    @media (max-width: 900px) {
+      .content {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .panel {
+      background: var(--bg-secondary);
+      border-radius: var(--radius);
+      border: 1px solid var(--bg-tertiary);
+      overflow: hidden;
+    }
+
+    .panel-header {
+      padding: 20px 25px;
+      border-bottom: 1px solid var(--bg-tertiary);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .panel-header h2 {
+      font-size: 1.1rem;
+      font-weight: 600;
+    }
+
+    .panel-body {
+      padding: 25px;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+      font-weight: 500;
+    }
+
+    .form-group input,
+    .form-group textarea,
+    .form-group select {
+      width: 100%;
+      padding: 12px 16px;
+      background: var(--bg-primary);
+      border: 1px solid var(--bg-tertiary);
+      border-radius: 8px;
+      color: var(--text-primary);
+      font-size: 0.95rem;
+      transition: border-color 0.2s;
+    }
+
+    .form-group input:focus,
+    .form-group textarea:focus,
+    .form-group select:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    .form-group textarea {
+      min-height: 100px;
+      resize: vertical;
+    }
+
+    .btn {
+      padding: 14px 28px;
+      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+      border: none;
+      border-radius: 8px;
+      color: white;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+      width: 100%;
+    }
+
+    .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 20px rgba(59, 130, 246, 0.4);
+    }
+
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .result {
+      padding: 20px;
+      border-radius: 8px;
+      margin-top: 20px;
+      font-family: 'Consolas', monospace;
+      font-size: 0.9rem;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+
+    .result.success {
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid var(--success);
+      color: var(--success);
+    }
+
+    .result.error {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid var(--error);
+      color: var(--error);
+    }
+
+    .result.pending {
+      background: rgba(59, 130, 246, 0.1);
+      border: 1px solid var(--accent);
+      color: var(--accent);
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .api-docs {
+      background: var(--bg-tertiary);
+      padding: 20px;
+      border-radius: 8px;
+      margin-top: 15px;
+    }
+
+    .api-docs h4 {
+      color: var(--text-primary);
+      margin-bottom: 10px;
+      font-size: 0.95rem;
+    }
+
+    .api-docs code {
+      display: block;
+      background: var(--bg-primary);
+      padding: 15px;
+      border-radius: 6px;
+      color: var(--success);
+      font-size: 0.85rem;
+      overflow-x: auto;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+
+    .badge.post { background: var(--success); color: white; }
+    .badge.get { background: var(--accent); color: white; }
+
+    .emoji {
+      font-size: 1.3rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>📧 Amazon SES Email Tester</h1>
+      <p>Test email sending via AWS SES API</p>
+    </header>
+
+    <div class="tabs">
+      <button class="tab active" data-tab="simple">📝 Simple Email</button>
+      <button class="tab" data-tab="welcome">🎉 Welcome Email</button>
+      <button class="tab" data-tab="otp">🔐 OTP Email</button>
+      <button class="tab" data-tab="notification">🔔 Notification</button>
+      <button class="tab" data-tab="api">📚 API Reference</button>
+    </div>
+
+    <div class="content">
+      <!-- Form Panel -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="emoji">✉️</span>
+          <h2>Email Form</h2>
+        </div>
+        <div class="panel-body">
+          <!-- Simple Email Form -->
+          <form id="simple-form" class="email-form">
+            <div class="form-group">
+              <label>To Email *</label>
+              <input type="email" name="to" required placeholder="recipient@email.com">
+            </div>
+            <div class="form-group">
+              <label>Subject *</label>
+              <input type="text" name="subject" required placeholder="Email subject">
+            </div>
+            <div class="form-group">
+              <label>Message</label>
+              <textarea name="text" placeholder="Plain text message"></textarea>
+            </div>
+            <div class="form-group">
+              <label>HTML Content (optional)</label>
+              <textarea name="html" placeholder="<h1>Hello</h1><p>HTML content here</p>"></textarea>
+            </div>
+            <button type="submit" class="btn">Send Email 🚀</button>
+          </form>
+
+          <!-- Welcome Email Form -->
+          <form id="welcome-form" class="email-form hidden">
+            <div class="form-group">
+              <label>To Email *</label>
+              <input type="email" name="to" required placeholder="recipient@email.com">
+            </div>
+            <div class="form-group">
+              <label>User Name *</label>
+              <input type="text" name="userName" required placeholder="John Doe">
+            </div>
+            <div class="form-group">
+              <label>Action URL</label>
+              <input type="url" name="actionUrl" placeholder="https://example.com/start">
+            </div>
+            <button type="submit" class="btn">Send Welcome Email 🎉</button>
+          </form>
+
+          <!-- OTP Email Form -->
+          <form id="otp-form" class="email-form hidden">
+            <div class="form-group">
+              <label>To Email *</label>
+              <input type="email" name="to" required placeholder="recipient@email.com">
+            </div>
+            <div class="form-group">
+              <label>OTP Code *</label>
+              <input type="text" name="otp" required placeholder="123456" maxlength="8">
+            </div>
+            <div class="form-group">
+              <label>User Name</label>
+              <input type="text" name="userName" placeholder="John">
+            </div>
+            <div class="form-group">
+              <label>Expiry (minutes)</label>
+              <input type="number" name="expiryMinutes" value="5" min="1" max="60">
+            </div>
+            <button type="submit" class="btn">Send OTP Email 🔐</button>
+          </form>
+
+          <!-- Notification Email Form -->
+          <form id="notification-form" class="email-form hidden">
+            <div class="form-group">
+              <label>To Email *</label>
+              <input type="email" name="to" required placeholder="recipient@email.com">
+            </div>
+            <div class="form-group">
+              <label>Title *</label>
+              <input type="text" name="title" required placeholder="Notification Title">
+            </div>
+            <div class="form-group">
+              <label>Message *</label>
+              <textarea name="message" required placeholder="Notification message content"></textarea>
+            </div>
+            <div class="form-group">
+              <label>Type</label>
+              <select name="type">
+                <option value="info">ℹ️ Info</option>
+                <option value="success">✅ Success</option>
+                <option value="warning">⚠️ Warning</option>
+                <option value="error">❌ Error</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Action URL (optional)</label>
+              <input type="url" name="actionUrl" placeholder="https://example.com/details">
+            </div>
+            <button type="submit" class="btn">Send Notification 🔔</button>
+          </form>
+
+          <!-- API Reference -->
+          <div id="api-reference" class="hidden">
+            <div class="api-docs">
+              <h4><span class="badge post">POST</span> /api/email/send</h4>
+              <code>{ "to": "email", "subject": "...", "text": "...", "html": "..." }</code>
+            </div>
+            <div class="api-docs">
+              <h4><span class="badge post">POST</span> /api/email/send-welcome</h4>
+              <code>{ "to": "email", "userName": "...", "actionUrl": "..." }</code>
+            </div>
+            <div class="api-docs">
+              <h4><span class="badge post">POST</span> /api/email/send-otp</h4>
+              <code>{ "to": "email", "otp": "123456", "userName": "...", "expiryMinutes": 5 }</code>
+            </div>
+            <div class="api-docs">
+              <h4><span class="badge post">POST</span> /api/email/send-notification</h4>
+              <code>{ "to": "email", "title": "...", "message": "...", "type": "info|success|warning|error" }</code>
+            </div>
+            <div class="api-docs">
+              <h4><span class="badge post">POST</span> /api/email/send-bulk</h4>
+              <code>{ "recipients": [{"email": "...", "name": "..."}], "subject": "...", "text": "..." }</code>
+            </div>
+            <div class="api-docs">
+              <h4><span class="badge get">GET</span> /api/health</h4>
+              <code>Returns: { "status": "ok", "timestamp": "...", "region": "..." }</code>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Result Panel -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="emoji">📋</span>
+          <h2>Response</h2>
+        </div>
+        <div class="panel-body">
+          <div id="result" class="result pending">
+Ready to send emails!
+
+Configure your .env file with:
+• AWS_ACCESS_KEY_ID
+• AWS_SECRET_ACCESS_KEY  
+• AWS_REGION
+• EMAIL_FROM
+
+Then try sending a test email.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Tab Switching
+    const tabs = document.querySelectorAll('.tab');
+    const forms = document.querySelectorAll('.email-form');
+    const apiRef = document.getElementById('api-reference');
+
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        tabs.forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+
+        const tabName = tab.dataset.tab;
+        
+        forms.forEach(f => f.classList.add('hidden'));
+        apiRef.classList.add('hidden');
+
+        if (tabName === 'api') {
+          apiRef.classList.remove('hidden');
+        } else {
+          document.getElementById(`${tabName}-form`)?.classList.remove('hidden');
+        }
+      });
+    });
+
+    // Form Submissions
+    const endpoints = {
+      'simple-form': '/api/email/send',
+      'welcome-form': '/api/email/send-welcome',
+      'otp-form': '/api/email/send-otp',
+      'notification-form': '/api/email/send-notification'
+    };
+
+    forms.forEach(form => {
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const resultDiv = document.getElementById('result');
+        const submitBtn = form.querySelector('button[type="submit"]');
+        
+        resultDiv.className = 'result pending';
+        resultDiv.textContent = '⏳ Sending email...';
+        submitBtn.disabled = true;
+
+        const formData = new FormData(form);
+        const data = Object.fromEntries(formData);
+        
+        // Clean empty values
+        Object.keys(data).forEach(key => {
+          if (!data[key]) delete data[key];
+        });
+
+        try {
+          const response = await fetch(endpoints[form.id], {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+          });
+
+          const result = await response.json();
+          
+          if (result.success) {
+            resultDiv.className = 'result success';
+            resultDiv.textContent = `✅ Email sent successfully!\n\n${JSON.stringify(result, null, 2)}`;
+          } else {
+            resultDiv.className = 'result error';
+            resultDiv.textContent = `❌ Failed to send email\n\n${JSON.stringify(result, null, 2)}`;
+          }
+        } catch (error) {
+          resultDiv.className = 'result error';
+          resultDiv.textContent = `❌ Error: ${error.message}\n\nMake sure the server is running and configured correctly.`;
+        } finally {
+          submitBtn.disabled = false;
+        }
+      });
+    });
+  </script>
+</body>
+</html>

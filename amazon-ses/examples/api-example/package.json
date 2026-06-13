@@ -1,0 +1,14 @@
+{
+    "name": "ses-api-example",
+    "version": "1.0.0",
+    "description": "Amazon SES API Example with AWS SDK v3",
+    "main": "index.js",
+    "type": "module",
+    "scripts": {
+        "start": "node index.js"
+    },
+    "dependencies": {
+        "@aws-sdk/client-ses": "^3.540.0",
+        "dotenv": "^16.4.5"
+    }
+}
