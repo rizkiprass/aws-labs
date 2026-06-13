@@ -1,75 +1,154 @@
-# Amazon SES — Code Examples
+# Amazon SES Code Examples
 
-Working code examples for sending email via Amazon SES, sourced from the [Learn-SES](https://github.com/rizkiprass/Learn-SES) learning project.
+Code examples demonstrating how to use Amazon SES via SMTP, API, and as part of a full application. Adapted from the [Learn-SES](https://github.com/rizkiprass/Learn-SES) learning project.
 
-## Examples
+## Structure
 
-| Example | Description | Run |
-|---------|-------------|-----|
-| [`smtp-example/`](./smtp-example/) | Send emails via SMTP with Nodemailer (text, HTML, attachment) | `cd smtp-example && npm install && npm start` |
-| [`api-example/`](./api-example/) | Send emails via AWS SDK v3 (simple, HTML, templates) | `cd api-example && npm install && npm start` |
-| [`full-app/`](./full-app/) | Express.js server with REST API + web UI for email operations | `cd full-app && npm install && npm run dev` |
-| [`bulk-email-example.js`](./bulk-email-example.js) | Send to thousands via `SendBulkTemplatedEmailCommand` | _(set env, then `node bulk-email-example.js`)_ |
-| [`input-email-examples.js`](./input-email-examples.js) | Read recipients from CSV / JSON / TXT | `node input-email-examples.js` |
+```
+examples/
+├── smtp-example/          # Send via SMTP with Nodemailer
+│   ├── index.js           # 4 examples: text, HTML, attachment, connection verify
+│   ├── .env.example
+│   └── package.json
+│
+├── api-example/           # Send via AWS SDK v3
+│   ├── index.js           # 4 examples: simple, HTML, template, account info
+│   ├── .env.example
+│   └── package.json
+│
+├── full-app/              # Express.js app with email service
+│   ├── src/
+│   │   ├── services/emailService.js   # Reusable email service class
+│   │   ├── routes/emailRoutes.js      # REST API endpoints
+│   │   ├── templates/index.js         # Email templates
+│   │   └── index.js                   # App entry point
+│   ├── public/index.html              # Simple web UI
+│   ├── .env.example
+│   └── package.json
+│
+├── bulk-email-example.js  # Bulk email: batch, parallel queue, DB-driven
+├── input-email-examples.js # Loading recipients from various sources
+│
+├── emails.csv             # Sample email list (CSV)
+├── emails.json            # Sample email list (JSON)
+├── emails.txt             # Sample email list (TXT)
+│
+└── docs/
+    ├── 01-getting-started.md
+    ├── 02-smtp-guide.md
+    └── 03-api-guide.md
+```
 
-## Sample data
+## Quick Start
 
-- [`emails.csv`](./emails.csv) — sample CSV
-- [`emails.json`](./emails.json) — sample JSON
-- [`emails.txt`](./emails.txt) — sample TXT (one email per line)
-
-## Quick start (SMTP)
+### 1. SMTP Example (Recommended for beginners)
 
 ```bash
 cd smtp-example
 npm install
 cp .env.example .env
-# Edit .env: set SMTP_USERNAME, SMTP_PASSWORD, EMAIL_FROM, EMAIL_TO
-npm start
+# Edit .env with your SES SMTP credentials
+node index.js
 ```
 
-SMTP credentials are different from AWS access keys. Create them at:
-**SES Console → SMTP Settings → Create SMTP Credentials**
+Sends 3 sample emails: text, HTML with styled template, and email with attachments.
 
-## Quick start (API)
+### 2. API Example (AWS SDK v3)
 
 ```bash
 cd api-example
 npm install
 cp .env.example .env
-# Edit .env: set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION
-# The IAM user needs ses:SendEmail, ses:SendRawEmail, ses:SendTemplatedEmail
-npm start
+# Edit .env with your AWS credentials (IAM user with SES permissions)
+node index.js
 ```
 
-## Quick start (Full App)
+Sends 4 sample emails: simple, HTML, templated, and shows account stats.
+
+### 3. Full App (Express + UI)
 
 ```bash
 cd full-app
 npm install
 cp .env.example .env
-# Edit .env with your AWS credentials
+# Edit .env with your credentials
 npm run dev
 # Open http://localhost:3000
 ```
 
-The full app exposes:
-- `POST /api/email/send` — send simple email
-- `POST /api/email/send-templated` — send templated email
-- `POST /api/email/send-bulk` — send bulk templated email
-- `POST /api/email/templates` — create a template
-- `GET  /api/email/templates` — list templates
-- `GET  /api/email/quota` — get send quota
+Provides a web UI and REST API for sending emails.
+
+### 4. Bulk Email
+
+```bash
+# Requires AWS credentials configured (via .env or IAM role)
+node bulk-email-example.js
+```
+
+Demonstrates 3 methods for sending bulk emails:
+- Method 1: Simple batching (50 per call)
+- Method 2: Parallel processing with queue (5 concurrent)
+- Method 3: Database-driven with retry logic
+
+## Prerequisites
+
+- Node.js 18+
+- AWS account with SES enabled
+- For sandbox mode: verified email addresses for both sender and recipient
+- For production mode: [request production access](https://docs.aws.amazon.com/ses/latest/DeveloperGuide/request-production-access.html)
+
+## AWS Credentials
+
+### For SMTP
+
+Create SMTP credentials in the SES Console:
+1. Open [AWS SES Console](https://console.aws.amazon.com/ses/)
+2. **SMTP Settings** → **Create SMTP Credentials**
+3. Save the username and password to your `.env` file
+
+### For API
+
+Create an IAM User with the following policy:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": [
+      "ses:SendEmail",
+      "ses:SendRawEmail",
+      "ses:SendTemplatedEmail",
+      "ses:SendBulkTemplatedEmail",
+      "ses:CreateTemplate",
+      "ses:GetTemplate",
+      "ses:ListTemplates",
+      "ses:DeleteTemplate",
+      "ses:GetSendQuota",
+      "ses:GetSendStatistics",
+      "ses:ListIdentities"
+    ],
+    "Resource": "*"
+  }]
+}
+```
 
 ## Sandbox vs Production
 
-By default, new SES accounts are in **sandbox mode**:
+By default, SES accounts start in **sandbox mode**:
 - ✅ Can only send to verified email addresses
-- ✅ Max 200 emails per 24 hours
-- ✅ Max 1 email per second
+- ✅ Maximum 200 emails per 24 hours
+- ✅ Maximum 1 email per second
 
-Request production access from the SES Console to send to anyone.
+For production access, see: https://docs.aws.amazon.com/ses/latest/DeveloperGuide/request-production-access.html
+
+## Documentation
+
+See [`docs/`](./docs/) for detailed guides:
+- [Getting Started](./docs/01-getting-started.md)
+- [SMTP Guide](./docs/02-smtp-guide.md)
+- [API Guide](./docs/03-api-guide.md)
 
 ## License
 
-MIT — see [Learn-SES](https://github.com/rizkiprass/Learn-SES) original repo.
+MIT — Adapted from [rizkiprass/Learn-SES](https://github.com/rizkiprass/Learn-SES)

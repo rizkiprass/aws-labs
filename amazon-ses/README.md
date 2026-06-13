@@ -44,28 +44,41 @@ After the stack is created:
 3. Wait for DKIM verification (usually 5-30 minutes)
 4. If you set `MailFromSubdomain`, add the required MX and SPF records shown in the SES Console
 
-### 4. Send a test email
+### 4. Configure your domain as a default config set
+
+1. Go to **SES Console** → **Verified identities** → your domain
+2. Under **Configuration set**, select the default monitoring config set created by the stack
+
+### 5. Send a test email
 
 ```bash
+# Get SMTP credentials from SES Console → SMTP Settings
 # Use the example SMTP script
 cd examples/smtp-example
-npm install
 cp .env.example .env
 # Edit .env with your SMTP credentials
-npm start
+npm install
+node index.js
 ```
 
-## Examples
+## Code Examples
 
-The `examples/` folder contains working code sourced from the [Learn-SES](https://github.com/rizkiprass/Learn-SES) project:
+The `examples/` directory contains ready-to-use code adapted from [Learn-SES](https://github.com/rizkiprass/Learn-SES):
 
-- **`smtp-example/`** — Send via SMTP with Nodemailer (text, HTML, attachment)
-- **`api-example/`** — Send via AWS SDK v3 (simple, HTML, templates, account info)
-- **`full-app/`** — Express.js server with REST API + web UI
-- **`bulk-email-example.js`** — Send to thousands via `SendBulkTemplatedEmailCommand`
-- **`input-email-examples.js`** — Read recipients from CSV / JSON / TXT
+| Example | Description |
+|---------|-------------|
+| [`smtp-example/`](./examples/smtp-example/) | Send emails via SMTP with Nodemailer (text, HTML, attachments) |
+| [`api-example/`](./examples/api-example/) | Send emails via AWS SDK v3 (simple, HTML, templates, bulk) |
+| [`full-app/`](./examples/full-app/) | Full Express.js app with email service and web UI |
+| [`bulk-email-example.js`](./examples/bulk-email-example.js) | 3 bulk-send strategies: batch, parallel queue, DB-driven |
+| [`input-email-examples.js`](./examples/input-email-examples.js) | Load recipients from CSV, JSON, or TXT files |
+| [`docs/`](./examples/docs/) | Detailed guides for each approach |
 
-See [`examples/README.md`](./examples/README.md) for full details.
+See [`examples/README.md`](./examples/README.md) for the full structure and prerequisites.
+
+## Manual Setup
+
+For a step-by-step walkthrough, see the [lab hands-on guide](https://github.com/rizkiprass/knowledge/blob/main/topics/amazon-ses/02-lab-hands-on/amazon-ses-lab.md) in the knowledge repo.
 
 ## Parameters
 
@@ -111,6 +124,8 @@ aws s3 rb s3://your-ses-logs-bucket
 
 # Delete the CloudFormation stack
 aws cloudformation delete-stack --stack-name amazon-ses
+
+# Wait for deletion to complete
 aws cloudformation wait stack-delete-complete --stack-name amazon-ses
 
 # Remove DNS records
@@ -123,4 +138,4 @@ aws cloudformation wait stack-delete-complete --stack-name amazon-ses
 - 📖 [Amazon SES hands-on lab guide](https://github.com/rizkiprass/knowledge/blob/main/topics/amazon-ses/02-lab-hands-on/amazon-ses-lab.md)
 - 📝 [Medium blog post](https://github.com/rizkiprass/knowledge/blob/main/topics/amazon-ses/04-medium/amazon-ses-post.md)
 - 💼 [LinkedIn post](https://github.com/rizkiprass/knowledge/blob/main/topics/amazon-ses/05-linkedin/amazon-ses-linkedin.md)
-- 💻 [Original Learn-SES examples](https://github.com/rizkiprass/Learn-SES)
+- 🔗 [Original code: Learn-SES](https://github.com/rizkiprass/Learn-SES)

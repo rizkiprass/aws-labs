@@ -1,0 +1,10 @@
+john.doe@gmail.com
+jane.smith@yahoo.com
+bob.wilson@outlook.com
+alice.brown@gmail.com
+charlie.davis@hotmail.com
+diana.evans@gmail.com
+frank.garcia@yahoo.com
+grace.harris@outlook.com
+henry.jackson@gmail.com
+iris.king@hotmail.com

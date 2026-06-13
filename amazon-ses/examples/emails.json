@@ -1,0 +1,42 @@
+[
+  {
+    "email": "john.doe@gmail.com",
+    "data": {
+      "name": "John Doe",
+      "orderId": "ORD-1001",
+      "amount": "150.00"
+    }
+  },
+  {
+    "email": "jane.smith@yahoo.com",
+    "data": {
+      "name": "Jane Smith",
+      "orderId": "ORD-1002",
+      "amount": "250.50"
+    }
+  },
+  {
+    "email": "bob.wilson@outlook.com",
+    "data": {
+      "name": "Bob Wilson",
+      "orderId": "ORD-1003",
+      "amount": "99.99"
+    }
+  },
+  {
+    "email": "alice.brown@gmail.com",
+    "data": {
+      "name": "Alice Brown",
+      "orderId": "ORD-1004",
+      "amount": "175.25"
+    }
+  },
+  {
+    "email": "charlie.davis@hotmail.com",
+    "data": {
+      "name": "Charlie Davis",
+      "orderId": "ORD-1005",
+      "amount": "320.00"
+    }
+  }
+]

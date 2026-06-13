@@ -1,0 +1,11 @@
+email,name,orderId,amount
+john.doe@gmail.com,John Doe,ORD-1001,150.00
+jane.smith@yahoo.com,Jane Smith,ORD-1002,250.50
+bob.wilson@outlook.com,Bob Wilson,ORD-1003,99.99
+alice.brown@gmail.com,Alice Brown,ORD-1004,175.25
+charlie.davis@hotmail.com,Charlie Davis,ORD-1005,320.00
+diana.evans@gmail.com,Diana Evans,ORD-1006,89.99
+frank.garcia@yahoo.com,Frank Garcia,ORD-1007,450.00
+grace.harris@outlook.com,Grace Harris,ORD-1008,125.50
+henry.jackson@gmail.com,Henry Jackson,ORD-1009,200.00
+iris.king@hotmail.com,Iris King,ORD-1010,310.75
