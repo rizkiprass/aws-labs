@@ -19,6 +19,7 @@ aws-labs/
 | Topic | CloudFormation | Examples | Knowledge Repo |
 |-------|---------------|----------|----------------|
 | [Amazon SES](./amazon-ses/) | ✅ | ✅ | [knowledge repo](https://github.com/rizkiprass/knowledge/tree/main/topics/amazon-ses) |
+| [AWS WAF](./aws-waf/) | ✅ | ✅ | [knowledge repo](https://github.com/rizkiprass/knowledge/tree/main/topics/aws-waf) |
 
 ## Quick Start
 

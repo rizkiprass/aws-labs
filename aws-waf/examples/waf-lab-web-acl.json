@@ -1,0 +1,86 @@
+{
+  "Name": "waf-lab-web-acl",
+  "Scope": "REGIONAL",
+  "DefaultAction": {
+    "Allow": {}
+  },
+  "Description": "WAF lab for ALB with IP block, rate limit, SQLi, and common managed rules",
+  "VisibilityConfig": {
+    "SampledRequestsEnabled": true,
+    "CloudWatchMetricsEnabled": true,
+    "MetricName": "wafLabWebAcl"
+  },
+  "Rules": [
+    {
+      "Name": "BlockCurrentTesterIp",
+      "Priority": 0,
+      "Statement": {
+        "IPSetReferenceStatement": {
+          "ARN": "arn:aws:wafv2:ap-southeast-3:339712808680:regional/ipset/waf-lab-block-current-ip/2ea1ea56-5df6-4d84-b2a7-e18bb9202ec0"
+        }
+      },
+      "Action": {
+        "Block": {}
+      },
+      "VisibilityConfig": {
+        "SampledRequestsEnabled": true,
+        "CloudWatchMetricsEnabled": true,
+        "MetricName": "blockCurrentTesterIp"
+      }
+    },
+    {
+      "Name": "RateLimitRatelimitPath",
+      "Priority": 1,
+      "Statement": {
+        "RateBasedStatement": {
+          "Limit": 10,
+          "AggregateKeyType": "IP"
+        }
+      },
+      "Action": {
+        "Block": {}
+      },
+      "VisibilityConfig": {
+        "SampledRequestsEnabled": true,
+        "CloudWatchMetricsEnabled": true,
+        "MetricName": "rateLimitRatelimitPath"
+      }
+    },
+    {
+      "Name": "AWSManagedRulesSQLiRuleSet",
+      "Priority": 10,
+      "Statement": {
+        "ManagedRuleGroupStatement": {
+          "VendorName": "AWS",
+          "Name": "AWSManagedRulesSQLiRuleSet"
+        }
+      },
+      "OverrideAction": {
+        "None": {}
+      },
+      "VisibilityConfig": {
+        "SampledRequestsEnabled": true,
+        "CloudWatchMetricsEnabled": true,
+        "MetricName": "awsManagedRulesSQLiRuleSet"
+      }
+    },
+    {
+      "Name": "AWSManagedRulesCommonRuleSet",
+      "Priority": 11,
+      "Statement": {
+        "ManagedRuleGroupStatement": {
+          "VendorName": "AWS",
+          "Name": "AWSManagedRulesCommonRuleSet"
+        }
+      },
+      "OverrideAction": {
+        "None": {}
+      },
+      "VisibilityConfig": {
+        "SampledRequestsEnabled": true,
+        "CloudWatchMetricsEnabled": true,
+        "MetricName": "awsManagedRulesCommonRuleSet"
+      }
+    }
+  ]
+}

@@ -1,0 +1,542 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  AWS WAF lab: public ALB, private EC2 dummy web app, VPC networking, and
+  dummy endpoints for testing AWS WAF rules that you attach later.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: waf-lab
+    AllowedPattern: '^[a-zA-Z][a-zA-Z0-9-]{2,30}$'
+    Description: Prefix used for named resources.
+
+  VpcCidr:
+    Type: String
+    Default: 10.20.0.0/16
+    Description: CIDR block for the lab VPC.
+
+  PublicSubnet1Cidr:
+    Type: String
+    Default: 10.20.0.0/24
+
+  PublicSubnet2Cidr:
+    Type: String
+    Default: 10.20.1.0/24
+
+  PrivateSubnet1Cidr:
+    Type: String
+    Default: 10.20.10.0/24
+
+  PrivateSubnet2Cidr:
+    Type: String
+    Default: 10.20.11.0/24
+
+  AllowedIngressCidr:
+    Type: String
+    Default: 0.0.0.0/0
+    Description: CIDR allowed to access the public ALB on HTTP port 80.
+
+  InstanceType:
+    Type: String
+    Default: t3.micro
+    AllowedValues:
+      - t3.micro
+      - t3.small
+      - t3.medium
+    Description: EC2 instance type for the private lab web server.
+
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+    Description: Latest Amazon Linux 2023 AMI from the public SSM parameter.
+
+Resources:
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-vpc'
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-igw'
+
+  VpcGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref Vpc
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: !Ref PublicSubnet1Cidr
+      MapPublicIpOnLaunch: true
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-public-a'
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: !Ref PublicSubnet2Cidr
+      MapPublicIpOnLaunch: true
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-public-b'
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: !Ref PrivateSubnet1Cidr
+      MapPublicIpOnLaunch: false
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-private-a'
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: !Ref PrivateSubnet2Cidr
+      MapPublicIpOnLaunch: false
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-private-b'
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-public-rt'
+
+  PublicDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VpcGatewayAttachment
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet1
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet2
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-private-rt'
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnet1
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnet2
+
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP access to the public ALB.
+      SecurityGroupIngress:
+        - CidrIp: !Ref AllowedIngressCidr
+          FromPort: 80
+          IpProtocol: tcp
+          ToPort: 80
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          FromPort: 8080
+          IpProtocol: tcp
+          ToPort: 8080
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-alb-sg'
+
+  AppSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow traffic from ALB to private dummy app.
+      SecurityGroupIngress:
+        - SourceSecurityGroupId: !Ref AlbSecurityGroup
+          FromPort: 8080
+          IpProtocol: tcp
+          ToPort: 8080
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          IpProtocol: -1
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-app-sg'
+
+  EndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow private EC2 instance to reach SSM interface endpoints.
+      SecurityGroupIngress:
+        - SourceSecurityGroupId: !Ref AppSecurityGroup
+          FromPort: 443
+          IpProtocol: tcp
+          ToPort: 443
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-endpoint-sg'
+
+  SsmEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      PrivateDnsEnabled: true
+      SecurityGroupIds:
+        - !Ref EndpointSecurityGroup
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ssm'
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      VpcEndpointType: Interface
+      VpcId: !Ref Vpc
+
+  SsmMessagesEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      PrivateDnsEnabled: true
+      SecurityGroupIds:
+        - !Ref EndpointSecurityGroup
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ssmmessages'
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      VpcEndpointType: Interface
+      VpcId: !Ref Vpc
+
+  Ec2MessagesEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      PrivateDnsEnabled: true
+      SecurityGroupIds:
+        - !Ref EndpointSecurityGroup
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ec2messages'
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      VpcEndpointType: Interface
+      VpcId: !Ref Vpc
+
+  AppInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-app-role'
+
+  AppInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref AppInstanceRole
+
+  AppInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      IamInstanceProfile: !Ref AppInstanceProfile
+      ImageId: !Ref LatestAmiId
+      InstanceType: !Ref InstanceType
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: false
+          DeviceIndex: '0'
+          GroupSet:
+            - !Ref AppSecurityGroup
+          SubnetId: !Ref PrivateSubnet1
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-private-app'
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -eux
+
+          mkdir -p /opt/waf-lab
+          cat > /opt/waf-lab/app.py <<'PYAPP'
+          from html import escape
+          from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+          from urllib.parse import parse_qs, urlparse
+          import json
+          import time
+
+          PORT = 8080
+
+          def page(title, body):
+              return f"""<!doctype html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>{escape(title)}</title>
+            <style>
+              body {{ font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.45; max-width: 960px; }}
+              code, pre {{ background: #f4f4f5; padding: .15rem .35rem; border-radius: 4px; }}
+              a {{ display: block; margin: .35rem 0; }}
+              form {{ margin: 1rem 0; padding: 1rem; border: 1px solid #ddd; border-radius: 8px; }}
+              input, textarea, button {{ display: block; margin: .5rem 0; padding: .5rem; min-width: 320px; }}
+            </style>
+          </head>
+          <body>
+            <h1>{escape(title)}</h1>
+            {body}
+          </body>
+          </html>""".encode()
+
+          class Handler(BaseHTTPRequestHandler):
+              server_version = "WafLab/1.0"
+
+              def _send(self, status, content, content_type="text/html; charset=utf-8"):
+                  self.send_response(status)
+                  self.send_header("Content-Type", content_type)
+                  self.send_header("Content-Length", str(len(content)))
+                  self.end_headers()
+                  self.wfile.write(content)
+
+              def _read_body(self):
+                  length = int(self.headers.get("content-length", "0") or "0")
+                  return self.rfile.read(length) if length else b""
+
+              def do_GET(self):
+                  parsed = urlparse(self.path)
+                  qs = parse_qs(parsed.query)
+                  path = parsed.path
+
+                  if path == "/health":
+                      self._send(200, b"ok", "text/plain")
+                      return
+
+                  if path == "/":
+                      body = """
+                      <p>Dummy application for AWS WAF testing behind an internet-facing ALB.</p>
+                      <h2>Endpoints</h2>
+                      <a href="/admin">/admin - sensitive path for URI path rules</a>
+                      <a href="/login">/login - POST target for brute-force or body inspection tests</a>
+                      <a href="/upload">/upload - POST target for file upload and body-size tests</a>
+                      <a href="/search?q=%27%20OR%201=1--">/search?q=' OR 1=1-- - SQL injection payload reflection</a>
+                      <a href="/xss?input=%3Cscript%3Ealert(1)%3C/script%3E">/xss?input=&lt;script&gt;alert(1)&lt;/script&gt; - XSS payload reflection</a>
+                      <a href="/path-traversal?file=../../etc/passwd">/path-traversal?file=../../etc/passwd - path traversal payload reflection</a>
+                      <a href="/ratelimit">/ratelimit - scoped WAF rate-based rule target</a>
+                      <a href="/headers">/headers - request header dump</a>
+                      """
+                      self._send(200, page("AWS WAF Lab App", body))
+                      return
+
+                  if path == "/admin":
+                      body = "<p>Admin panel placeholder. Use this path to test URI path match rules.</p>"
+                      self._send(200, page("Admin", body))
+                      return
+
+                  if path == "/login":
+                      body = """
+                      <form method="post" action="/login">
+                        <label>Username <input name="username" value="admin"></label>
+                        <label>Password <input name="password" value="password"></label>
+                        <button type="submit">Submit</button>
+                      </form>
+                      """
+                      self._send(200, page("Login Test", body))
+                      return
+
+                  if path == "/upload":
+                      body = """
+                      <form method="post" action="/upload" enctype="application/octet-stream">
+                        <textarea name="payload" rows="8">&lt;script&gt;alert(1)&lt;/script&gt;</textarea>
+                        <button type="submit">Upload</button>
+                      </form>
+                      """
+                      self._send(200, page("Upload Test", body))
+                      return
+
+                  if path == "/search":
+                      value = qs.get("q", [""])[0]
+                      body = f"<p>Search query reflected: <code>{escape(value)}</code></p>"
+                      self._send(200, page("Search Test", body))
+                      return
+
+                  if path == "/xss":
+                      value = qs.get("input", [""])[0]
+                      body = f"<p>Raw reflected input for WAF testing:</p><pre>{value}</pre>"
+                      self._send(200, page("XSS Test", body))
+                      return
+
+                  if path == "/path-traversal":
+                      value = qs.get("file", [""])[0]
+                      body = f"<p>Requested file path: <code>{escape(value)}</code></p>"
+                      self._send(200, page("Path Traversal Test", body))
+                      return
+
+                  if path == "/ratelimit":
+                      body = f"<p>Rate-limit target hit at {time.time()}</p>"
+                      self._send(200, page("Rate Limit Test", body))
+                      return
+
+                  if path == "/headers":
+                      headers = {k: v for k, v in self.headers.items()}
+                      content = json.dumps(headers, indent=2).encode()
+                      self._send(200, content, "application/json")
+                      return
+
+                  self._send(404, page("Not Found", f"<p>No route for <code>{escape(path)}</code>.</p>"))
+
+              def do_POST(self):
+                  parsed = urlparse(self.path)
+                  body = self._read_body()
+
+                  if parsed.path == "/upload":
+                      response = {
+                          "endpoint": "/upload",
+                          "bytes_received": len(body),
+                          "body_preview": body[:500].decode(errors="replace"),
+                      }
+                      self._send(200, json.dumps(response, indent=2).encode(), "application/json")
+                      return
+
+                  if parsed.path == "/login":
+                      response = {
+                          "endpoint": "/login",
+                          "bytes_received": len(body),
+                          "body": body.decode(errors="replace"),
+                      }
+                      self._send(200, json.dumps(response, indent=2).encode(), "application/json")
+                      return
+
+                  if parsed.path.startswith("/api/"):
+                      response = {
+                          "endpoint": parsed.path,
+                          "bytes_received": len(body),
+                          "body_preview": body[:500].decode(errors="replace"),
+                      }
+                      self._send(200, json.dumps(response, indent=2).encode(), "application/json")
+                      return
+
+                  self._send(404, page("Not Found", f"<p>No POST route for <code>{escape(parsed.path)}</code>.</p>"))
+
+          if __name__ == "__main__":
+              server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
+              print(f"WAF lab app listening on {PORT}", flush=True)
+              server.serve_forever()
+          PYAPP
+
+          cat > /etc/systemd/system/waf-lab.service <<'SYSTEMD'
+          [Unit]
+          Description=AWS WAF lab dummy app
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          ExecStart=/usr/bin/python3 /opt/waf-lab/app.py
+          Restart=always
+          RestartSec=3
+          User=root
+
+          [Install]
+          WantedBy=multi-user.target
+          SYSTEMD
+
+          systemctl daemon-reload
+          systemctl enable --now waf-lab.service
+
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internet-facing
+      SecurityGroups:
+        - !Ref AlbSecurityGroup
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      Type: application
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-alb'
+
+  AppTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckEnabled: true
+      HealthCheckIntervalSeconds: 15
+      HealthCheckPath: /health
+      HealthCheckProtocol: HTTP
+      HealthyThresholdCount: 2
+      Matcher:
+        HttpCode: '200'
+      Port: 8080
+      Protocol: HTTP
+      TargetType: instance
+      Targets:
+        - Id: !Ref AppInstance
+          Port: 8080
+      UnhealthyThresholdCount: 3
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-tg'
+
+  HttpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - TargetGroupArn: !Ref AppTargetGroup
+          Type: forward
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+Outputs:
+  AlbDnsName:
+    Description: Public ALB DNS name.
+    Value: !GetAtt ApplicationLoadBalancer.DNSName
+
+  LabAppUrl:
+    Description: HTTP URL for the WAF lab dummy app.
+    Value: !Sub 'http://${ApplicationLoadBalancer.DNSName}/'
+
+  PrivateInstanceId:
+    Description: Private EC2 instance ID. Use Session Manager, not SSH.
+    Value: !Ref AppInstance
