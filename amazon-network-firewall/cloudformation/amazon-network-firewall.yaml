@@ -1,0 +1,526 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AWS Network Firewall Lab Environment — VPC + Firewall + ALB + EC2
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: nfw-lab
+    Description: Project name for resource tagging
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+    Description: Amazon Linux 2023 AMI
+
+Mappings:
+  RegionConfig:
+    ap-southeast-1:
+      AZ1: ap-southeast-1a
+      AZ2: ap-southeast-1b
+    ap-southeast-3:
+      AZ1: ap-southeast-3a
+      AZ2: ap-southeast-3b
+    us-east-1:
+      AZ1: us-east-1a
+      AZ2: us-east-1b
+
+Conditions:
+  HasFirewallSubnetRouteTable: !Equals [true, true]
+
+Resources:
+  # ============================================================
+  # VPC
+  # ============================================================
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-vpc
+
+  # ============================================================
+  # Internet Gateway
+  # ============================================================
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-igw
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # ============================================================
+  # Subnets
+  # ============================================================
+  FirewallSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/28
+      AvailabilityZone: !FindInMap [RegionConfig, !Ref AWS::Region, AZ1]
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-firewall-a
+
+  FirewallSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.2.0/28
+      AvailabilityZone: !FindInMap [RegionConfig, !Ref AWS::Region, AZ2]
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-firewall-b
+
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.10.0/24
+      AvailabilityZone: !FindInMap [RegionConfig, !Ref AWS::Region, AZ1]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-public-a
+
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.11.0/24
+      AvailabilityZone: !FindInMap [RegionConfig, !Ref AWS::Region, AZ2]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-public-b
+
+  PrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.20.0/24
+      AvailabilityZone: !FindInMap [RegionConfig, !Ref AWS::Region, AZ1]
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-private-a
+
+  PrivateSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.21.0/24
+      AvailabilityZone: !FindInMap [RegionConfig, !Ref AWS::Region, AZ2]
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-private-b
+
+  # ============================================================
+  # NAT Gateway for private subnets
+  # ============================================================
+  NatEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatEIP.AllocationId
+      SubnetId: !Ref PublicSubnetA
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-nat
+
+  # ============================================================
+  # Route Tables
+  # ============================================================
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-public-rt
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnetA
+
+  PublicSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnetB
+
+  PrivateRouteTableA:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-private-a-rt
+
+  PrivateRouteA:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableA
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+
+  PrivateSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableA
+      SubnetId: !Ref PrivateSubnetA
+
+  PrivateRouteTableB:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-private-b-rt
+
+  PrivateRouteB:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableB
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+
+  PrivateSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableB
+      SubnetId: !Ref PrivateSubnetB
+
+  # ============================================================
+  # Firewall Subnet Routes (traffic to internet goes through IGW)
+  # ============================================================
+  FirewallRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-firewall-rt
+
+  FirewallDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref FirewallRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  FirewallSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref FirewallRouteTable
+      SubnetId: !Ref FirewallSubnetA
+
+  FirewallSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref FirewallRouteTable
+      SubnetId: !Ref FirewallSubnetB
+
+  # ============================================================
+  # Network Firewall
+  # ============================================================
+  FirewallPolicy:
+    Type: AWS::NetworkFirewall::FirewallPolicy
+    Properties:
+      FirewallPolicyName: !Sub ${ProjectName}-policy
+      FirewallPolicy:
+        StatelessDefaultActions:
+          - aws:forward_to_sfe
+        StatelessFragmentDefaultActions:
+          - aws:forward_to_sfe
+        StatefulRuleGroupReferences:
+          - ResourceArn: !Sub arn:${AWS::Partition}:network-firewall:${AWS::Region}:${AWS::AccountId}:stateful-rulegroup/aws-managed/ThreatSignatures-Exploits
+          - ResourceArn: !Sub arn:${AWS::Partition}:network-firewall:${AWS::Region}:${AWS::AccountId}:stateful-rulegroup/aws-managed/DomainLists
+          - ResourceArn: !Sub arn:${AWS::Partition}:network-firewall:${AWS::Region}:${AWS::AccountId}:stateful-rulegroup/aws-managed/ThreatSignatures-WebAttacks
+
+  NetworkFirewall:
+    Type: AWS::NetworkFirewall::Firewall
+    Properties:
+      FirewallName: !Sub ${ProjectName}-firewall
+      FirewallPolicyArn: !Ref FirewallPolicy
+      VpcId: !Ref VPC
+      SubnetMappings:
+        - SubnetId: !Ref FirewallSubnetA
+        - SubnetId: !Ref FirewallSubnetB
+      DeleteProtection: false
+      FirewallPolicyChangeProtection: false
+      SubnetChangeProtection: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-firewall
+
+  # ============================================================
+  # Routing to the Firewall (VPC routes)
+  # ============================================================
+  PrivateRouteTableAFirewallRoute:
+    Type: AWS::EC2::Route
+    DependsOn: NetworkFirewall
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableA
+      DestinationCidrBlock: 0.0.0.0/0
+      VpcEndpointId: !GetAtt NetworkFirewall.EndpointIds.0
+    # Note: This route goes AFTER the NAT route with lower priority
+    # In practice, traffic from private subnets to internet goes:
+    #   private → NAT → IGW (for egress)
+    # For inspection by firewall, you'd use a different route strategy
+    # This is a simplified lab setup
+
+  # ============================================================
+  # ALB + EC2 for test traffic
+  # ============================================================
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: ALB security group
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-alb-sg
+
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: EC2 instance security group
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref AlbSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-instance-sg
+
+  TestWebServer:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t3.nano
+      SubnetId: !Ref PrivateSubnetA
+      SecurityGroupIds:
+        - !Ref InstanceSecurityGroup
+      ImageId: !Ref LatestAmiId
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          dnf install -y python3
+          mkdir -p /var/www/html
+          cat > /var/www/html/index.html << 'EOF'
+          <!DOCTYPE html>
+          <html><head><title>AWS Network Firewall Lab</title></head>
+          <body>
+            <h1>Network Firewall Lab</h1>
+            <p>Server is running behind AWS Network Firewall.</p>
+            <p>Client IP: <strong><!--#echo var="REMOTE_ADDR"--></strong></p>
+          </body></html>
+          EOF
+          cat > /var/www/html/health << 'EOF'
+          OK
+          EOF
+          cat > /etc/systemd/system/test-server.service << 'SERVICEEOF'
+          [Unit]
+          Description=Test HTTP Server
+          After=network.target
+          [Service]
+          ExecStart=/usr/bin/python3 -m http.server 80 --directory /var/www/html
+          Restart=always
+          [Install]
+          WantedBy=multi-user.target
+          SERVICEEOF
+          systemctl daemon-reload
+          systemctl enable --now test-server.service
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-webserver
+
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub ${ProjectName}-alb
+      Scheme: internet-facing
+      Subnets:
+        - !Ref PublicSubnetA
+        - !Ref PublicSubnetB
+      SecurityGroups:
+        - !Ref AlbSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-alb
+
+  AlbTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub ${ProjectName}-tg
+      Port: 80
+      Protocol: HTTP
+      TargetType: instance
+      VpcId: !Ref VPC
+      HealthCheckPath: /health
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 10
+      HealthyThresholdCount: 3
+      UnhealthyThresholdCount: 3
+
+  AlbListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref AlbTargetGroup
+
+  AlbTargetAttachment:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroupAttachment
+    Properties:
+      TargetGroupArn: !Ref AlbTargetGroup
+      TargetId: !Ref TestWebServer
+      Port: 80
+
+  # ============================================================
+  # CloudWatch Alarms
+  # ============================================================
+  DroppedPacketsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${ProjectName}-droppedpackets-5m
+      AlarmDescription: DroppedPackets threshold > 50 per 5 minutes
+      Metrics:
+        - Id: m1
+          MetricStat:
+            Metric:
+              Namespace: AWS/NetworkFirewall
+              MetricName: DroppedPackets
+              Dimensions:
+                - Name: FirewallName
+                  Value: !Sub ${ProjectName}-firewall
+                - Name: Engine
+                  Value: Stateful
+                - Name: AvailabilityZone
+                  Value: !FindInMap [RegionConfig, !Ref AWS::Region, AZ1]
+            Period: 300
+            Stat: Sum
+          ReturnData: false
+        - Id: m2
+          MetricStat:
+            Metric:
+              Namespace: AWS/NetworkFirewall
+              MetricName: DroppedPackets
+              Dimensions:
+                - Name: FirewallName
+                  Value: !Sub ${ProjectName}-firewall
+                - Name: Engine
+                  Value: Stateful
+                - Name: AvailabilityZone
+                  Value: !FindInMap [RegionConfig, !Ref AWS::Region, AZ2]
+            Period: 300
+            Stat: Sum
+          ReturnData: false
+        - Id: e1
+          Expression: m1+m2
+          Label: TotalDroppedPackets
+          ReturnData: true
+      Threshold: 50
+      ComparisonOperator: GreaterThanThreshold
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-droppedpackets-alarm
+
+  # ============================================================
+  # Firewall Logging to S3
+  # ============================================================
+  LogBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${ProjectName}-logs-${AWS::AccountId}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-logs
+
+  FirewallLoggingConfiguration:
+    Type: AWS::NetworkFirewall::LoggingConfiguration
+    DependsOn: NetworkFirewall
+    Properties:
+      FirewallArn: !Ref NetworkFirewall
+      LoggingConfiguration:
+        LogDestinationConfigs:
+          - LogDestination:
+              bucketName: !Ref LogBucket
+              prefix: alert
+            LogDestinationType: S3
+            LogType: Alert
+        # Flow logs can be enabled separately
+        #   - LogDestination:
+        #       bucketName: !Ref LogBucket
+        #       prefix: flow
+        #     LogDestinationType: S3
+        #     LogType: Flow
+
+Outputs:
+  LabUrl:
+    Description: URL to access the lab application
+    Value: !Sub http://${ApplicationLoadBalancer.DNSName}
+  FirewallName:
+    Description: Network Firewall name
+    Value: !Ref NetworkFirewall
+  FirewallArn:
+    Description: Network Firewall ARN
+    Value: !Ref NetworkFirewall
+  FirewallPolicyArn:
+    Description: Firewall Policy ARN
+    Value: !Ref FirewallPolicy
+  LogBucketName:
+    Description: S3 bucket for firewall logs
+    Value: !Ref LogBucket
+  AlertLogPrefix:
+    Description: S3 prefix for alert logs
+    Value: alert
+  DroppedPacketsAlarmName:
+    Description: CloudWatch alarm for DroppedPackets
+    Value: !Ref DroppedPacketsAlarm
+  AlbDnsName:
+    Description: ALB DNS name for testing
+    Value: !GetAtt ApplicationLoadBalancer.DNSName
